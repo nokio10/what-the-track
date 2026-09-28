@@ -1,0 +1,923 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NEURO ADMIN - PURPLE EDITION</title>
+    
+    <link href="{{ url_for('static', filename='offline-fallback.css') }}" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <!-- Запасной клиент без интернета. Смена src в onerror не работает: уже
+         запущенный <script> повторно не загружается. document.write во время
+         разбора страницы подключает локальный клиент синхронно, до DOMContentLoaded. -->
+    <script>window.io || document.write('<script src="{{ url_for('static', filename='socketio-lite.js') }}"><\/script>');</script>
+    
+    <style>
+        :root {
+            --bg-dark: #0f0c29;
+            --bg-gradient: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+            --glass-bg: rgba(20, 20, 40, 0.75);
+            --glass-border: rgba(167, 139, 250, 0.2);
+            --primary-purple: #8b5cf6;
+            --primary-gradient: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
+            --primary-glow: 0 4px 15px rgba(139, 92, 246, 0.4);
+            --text-main: #e2e8f0;
+            --text-muted: #cbd5e1; 
+            --console-bg: #0d1117;
+            --console-text: #3fb950;
+        }
+
+        body {
+            background: var(--bg-dark);
+            background-image: var(--bg-gradient);
+            background-attachment: fixed;
+            color: var(--text-main);
+            font-family: 'Outfit', sans-serif;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        .form-control-dark::placeholder { color: rgba(255, 255, 255, 0.6) !important; opacity: 1; }
+        .text-muted { color: #adb5bd !important; }
+        .text-white-50 { color: rgba(255, 255, 255, 0.7) !important; }
+
+        .glass-card {
+            background: var(--glass-bg);
+            backdrop-filter: blur(15px);
+            -webkit-backdrop-filter: blur(15px);
+            border: 1px solid var(--glass-border);
+            border-radius: 24px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            padding: 25px;
+            margin-bottom: 20px;
+        }
+
+        .game-title {
+            background: linear-gradient(to right, #c084fc, #8b5cf6);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            font-weight: 800; letter-spacing: 1px;
+        }
+
+        .btn-purple-main {
+            background: var(--primary-gradient); border: none; color: white;
+            font-weight: 600; box-shadow: var(--primary-glow); transition: 0.3s;
+        }
+        .btn-purple-main:hover { transform: translateY(-2px); color: white; box-shadow: 0 6px 20px rgba(139, 92, 246, 0.6); }
+        .btn-purple-main:disabled { background: #475569; box-shadow: none; transform: none; }
+
+        .btn-purple-ghost {
+            background: rgba(139, 92, 246, 0.1); border: 1px solid rgba(139, 92, 246, 0.3); color: #c4b5fd; transition: 0.3s;
+        }
+        .btn-purple-ghost:hover:not(:disabled) { background: rgba(139, 92, 246, 0.2); border-color: #8b5cf6; color: white; }
+        
+        .btn-danger-ghost {
+            background: rgba(244, 63, 94, 0.1); border: 1px solid rgba(244, 63, 94, 0.3); color: #fda4af; transition: 0.3s;
+        }
+        .btn-danger-ghost:hover { background: rgba(244, 63, 94, 0.2); color: white; box-shadow: 0 0 15px rgba(244, 63, 94, 0.3); }
+
+        .btn-gold {
+            background: linear-gradient(135deg, #fbbf24 0%, #d97706 100%); border: none; color: white;
+            font-weight: 700; box-shadow: 0 4px 15px rgba(251, 191, 36, 0.3);
+        }
+        .btn-gold:hover { color: white; box-shadow: 0 6px 20px rgba(251, 191, 36, 0.5); transform: translateY(-2px); }
+
+        .modal-content { background: #1e1b4b; border: 1px solid var(--glass-border); color: var(--text-main); border-radius: 20px; }
+        .modal-header { border-bottom: 1px solid rgba(255,255,255,0.1); }
+        .modal-footer { border-top: 1px solid rgba(255,255,255,0.1); }
+        .form-control-dark { background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); color: white; }
+        .form-control-dark:focus { background: rgba(0,0,0,0.4); border-color: #8b5cf6; color: white; box-shadow: 0 0 0 0.25rem rgba(139, 92, 246, 0.25); }
+        .btn-close-white { filter: invert(1) grayscale(100%) brightness(200%); }
+
+        #consoleOutput {
+            background: var(--console-bg); color: var(--console-text);
+            font-family: 'Courier New', monospace; height: 150px; overflow-y: auto;
+            padding: 10px; font-size: 0.85em; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);
+        }
+        .progress { height: 10px; background: rgba(255,255,255,0.1); border-radius: 5px; }
+        .progress-bar { background: var(--primary-gradient); }
+
+        #questionsList { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+        #questionsList li {
+            background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.1);
+            color: var(--text-muted); border-radius: 20px; padding: 6px 14px; font-size: 0.8rem;
+            display: flex; align-items: center; transition: all 0.2s ease; cursor: default;
+        }
+        #questionsList li.q-current {
+            background: var(--primary-gradient); color: white; border-color: transparent;
+            box-shadow: 0 0 15px rgba(139, 92, 246, 0.5); transform: scale(1.05); font-weight: 700; z-index: 2;
+        }
+        #questionsList li.q-done {
+            background: rgba(52, 211, 153, 0.1); color: #34d399; border-color: rgba(52, 211, 153, 0.2); opacity: 0.7;
+        }
+
+        .player-item {
+            background: rgba(255,255,255,0.02); border-radius: 12px; padding: 10px;
+            margin-bottom: 5px; display: flex; justify-content: space-between; align-items: center;
+        }
+        .btn-mini { width: 24px; height: 24px; padding: 0; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 0.7rem; }
+
+        .lang-btn {
+            background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);
+            color: var(--text-muted); border-radius: 20px; padding: 5px 15px;
+            font-size: 0.85rem; font-weight: 600; cursor: pointer; transition: 0.3s;
+        }
+        .lang-btn .active-lang { color: var(--primary-purple); }
+
+        #gameEndOverlay {
+            display: none !important; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(15, 12, 41, 0.95); z-index: 99999;
+            align-items: center; justify-content: center; flex-direction: column; backdrop-filter: blur(15px);
+        }
+        #gameEndOverlay.show { display: flex !important; }
+        .overlay-card {
+            background: linear-gradient(145deg, #1e1b4b, #312e81);
+            border: 1px solid rgba(139, 92, 246, 0.3); box-shadow: 0 0 80px rgba(139, 92, 246, 0.2);
+            border-radius: 30px; padding: 40px; width: 90%; max-width: 650px; text-align: center; position: relative;
+        }
+        canvas { position: fixed; top: 0; left: 0; pointer-events: none; z-index: 5000; }
+        
+        .ans-card {
+            background: rgba(30, 27, 75, 0.8); border: 1px solid rgba(255,255,255,0.05);
+            margin: 5px; padding: 10px; border-radius: 12px; min-width: 150px; box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+        }
+        .ans-correct { border-bottom: 3px solid #34d399; }
+        .ans-wrong { border-bottom: 3px solid #f43f5e; }
+        
+        #adminAudio { filter: sepia(100%) hue-rotate(240deg) saturate(200%) invert(1); width: 100%; border-radius: 20px; opacity: 0.8; }
+        
+        .table-dark { background-color: transparent; }
+        .table-dark td, .table-dark th { border-color: rgba(255,255,255,0.1); }
+        .table-hover tbody tr:hover td { background-color: rgba(255,255,255,0.05); }
+    </style>
+</head>
+<body>
+
+    <canvas id="fireworksCanvas"></canvas>
+
+    <!-- OVERLAY: GAME OVER -->
+    <div id="gameEndOverlay">
+        <div class="overlay-card">
+            <h1 class="mb-2" style="color: #c4b5fd;" data-i18n="gameFinished">🏆 GAME FINISHED 🏆</h1>
+            <p id="winnerText" class="text-uppercase" style="letter-spacing: 2px; color: #818cf8; font-size: 0.9rem;" data-i18n="winnerTitle">WINNERS</p>
+            <h2 id="finalWinnerName" class="mb-4 fw-bold" style="font-size: 3rem; background: linear-gradient(to right, #a78bfa, #f472b6); -webkit-background-clip: text; -webkit-text-fill-color: transparent;"></h2>
+            <div class="p-3 rounded-4 mb-4" style="background: rgba(0,0,0,0.2); max-height: 250px; overflow-y: auto;">
+                <table class="table table-dark table-borderless table-sm mb-0 bg-transparent">
+                    <thead><tr style="color: #818cf8; border-bottom: 1px solid rgba(129, 140, 248, 0.2);"><th>#</th><th data-i18n="thName">Name</th><th class="text-end" data-i18n="thScore">Score</th></tr></thead>
+                    <tbody id="finalLeaderboard"></tbody>
+                </table>
+            </div>
+            <div class="d-grid gap-3">
+                <button onclick="restartGameFull()" class="btn btn-purple-main btn-lg rounded-pill">
+                    <i class="fas fa-trash-alt me-2"></i> <span data-i18n="btnReset">RESET GAME</span>
+                </button>
+                <button onclick="closeEndScreen()" class="btn btn-purple-ghost btn-sm rounded-pill">
+                    <span data-i18n="btnReturn">Return to Admin</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: SETTINGS -->
+    <div class="modal fade" id="settingsModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><span data-i18n="settingsTitle">Game Settings</span> <span id="modalGameId" class="text-info fw-bold ms-2 small"></span></h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label text-white-50 small text-uppercase" data-i18n="yandexToken">Yandex Token</label>
+                            <input type="text" id="yandexToken" class="form-control form-control-dark mb-2" placeholder="AgAAAA...">
+                            <div class="text-muted" style="font-size: 0.75em;">
+                                <a href="https://oauth.yandex.ru/authorize?response_type=token&client_id=23cabbbdc6cd418abb4b39c32c41195d" target="_blank" class="text-info text-decoration-none">
+                                    <i class="fas fa-key me-1"></i> <span data-i18n="getToken">Get Token Here</span>
+                                </a>
+                                <div class="mt-1" data-i18n="tokenFromEnv">Leave empty to use YANDEX_TOKEN from .env</div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label text-white-50 small text-uppercase" data-i18n="trackUrls">Track Links / Playlists</label>
+                            <textarea id="trackUrls" class="form-control form-control-dark" rows="5" placeholder="https://music.yandex.ru/..."></textarea>
+                        </div>
+                    </div>
+                    <hr class="border-secondary my-4">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <strong class="text-white small" data-i18n="genStatus">Generation Status:</strong>
+                        <button class="btn btn-purple-main btn-sm px-4" onclick="startGen()" id="btnGenStart">
+                            <i class="fas fa-rocket me-2"></i> <span data-i18n="btnGenerate">GENERATE</span>
+                        </button>
+                    </div>
+                    <div class="progress mb-2">
+                        <div id="genBar" class="progress-bar progress-bar-striped progress-bar-animated" style="width:0%"></div>
+                    </div>
+                    <div id="consoleOutput"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: SAVED GAMES -->
+    <div class="modal fade" id="savedGamesModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="fas fa-save me-2 text-info"></i> <span data-i18n="savedGamesTitle">Saved Games Archive</span></h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-info small py-2" style="background: rgba(13, 202, 240, 0.1); border-color: rgba(13, 202, 240, 0.2); color: #6edff6;">
+                        <i class="fas fa-info-circle me-1"></i> 
+                        <span data-i18n="savedGamesInfo">Loading a game will reset the current session and disconnect players.</span>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-dark table-hover align-middle">
+                            <thead>
+                                <tr class="text-white-50 small text-uppercase">
+                                    <th>ID</th>
+                                    <th>Date</th>
+                                    <th class="text-center">Status</th>
+                                    <th class="text-end">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="savedGamesList"></tbody>
+                        </table>
+                    </div>
+                    <div id="noSavedGames" class="text-center text-muted py-4" style="display:none;">
+                        <i class="fas fa-ghost fs-4 mb-2"></i><br>No saved games found.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MAIN INTERFACE -->
+    <div class="container py-5">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+             <div class="d-flex align-items-center gap-3">
+                <div style="width: 45px; height: 45px; background: var(--primary-gradient); border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: var(--primary-glow);">
+                    <i class="fas fa-brain text-white fs-5"></i>
+                </div>
+                <div>
+                    <h2 class="game-title mb-0 h5" data-i18n="gameTitle">NEURO MUSIC GAME</h2>
+                    <span class="text-muted small" style="letter-spacing: 1px;">neuro</span>
+                </div>
+             </div>
+             
+             <button id="langToggle" class="lang-btn">
+                <span id="langEn">EN</span> / <span id="langRu">RU</span>
+            </button>
+        </div>
+
+        <div class="glass-card py-3 px-4 d-flex justify-content-between align-items-center mb-4">
+            <div>
+                <span class="text-white-50 small me-2" data-i18n="gameIdLabel">GAME ID:</span>
+                <span id="dispGameId" class="fw-bold text-white fs-5" style="font-family: monospace;">---</span>
+            </div>
+            <div class="d-flex gap-2">
+                <button id="btnCreate" onclick="socket.emit('admin_create_game')" class="btn btn-gold btn-sm px-3 rounded-pill">
+                    <i class="fas fa-dice me-2"></i> <span data-i18n="btnCreate">CREATE GAME</span>
+                </button>
+                <button id="btnSettings" class="btn btn-purple-ghost btn-sm px-3 rounded-pill" data-bs-toggle="modal" data-bs-target="#settingsModal" disabled>
+                    <i class="fas fa-cog me-2"></i> <span data-i18n="btnSettings">SETTINGS</span>
+                </button>
+                <button id="btnSavedGames" onclick="openSavedGames()" class="btn btn-info btn-sm px-3 rounded-pill" style="background: rgba(6, 182, 212, 0.1); border: 1px solid rgba(6, 182, 212, 0.3); color: #67e8f9;">
+                    <i class="fas fa-folder-open me-2"></i> <span data-i18n="btnSaved">SAVED</span>
+                </button>
+            </div>
+        </div>
+
+        <audio id="adminAudio" controls class="w-100 mb-4"></audio>
+        
+        <div class="row g-4">
+            <!-- Left: Controls & Playlist & Answers -->
+            <div class="col-lg-8">
+                <div class="glass-card mb-4">
+                    <div class="d-flex gap-2 mb-3">
+                        <button onclick="socket.emit('admin_start_round')" class="btn btn-purple-main flex-grow-1 py-3 rounded-3" id="btnStartRound" disabled>
+                            <i class="fas fa-play me-2"></i> <span data-i18n="btnStartRound">START ROUNDS</span>
+                        </button>
+                        <button onclick="socket.emit('admin_end_game')" class="btn btn-danger-ghost flex-grow-1 py-3 rounded-3">
+                            <i class="fas fa-flag-checkered me-2"></i> <span data-i18n="btnEndGame">FINISH GAME</span>
+                        </button>
+                    </div>
+                    
+                    <div id="gameControls" style="display:none; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 20px; margin-top: 20px;">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <span class="text-white-50 fw-bold" data-i18n="activeRound">ACTIVE ROUND</span>
+                            <span id="qNum" class="badge bg-primary rounded-pill">0</span>
+                        </div>
+                        <div class="d-flex gap-2">
+                            <button onclick="emitNext()" class="btn btn-purple-ghost flex-grow-1 py-2">
+                                <span data-i18n="btnNext">NEXT</span> <i class="fas fa-forward ms-1"></i>
+                            </button>
+                            <button onclick="emitRepeat()" class="btn btn-purple-ghost py-2">
+                                <i class="fas fa-redo"></i>
+                            </button>
+                            <button onclick="emitAnswer()" class="btn btn-purple-ghost flex-grow-1 py-2">
+                                <i class="far fa-eye me-1"></i> <span data-i18n="btnAnswer">ANSWER</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="glass-card p-3 mb-4">
+                    <h6 class="text-white-50 small mb-3 text-uppercase" data-i18n="playlist">Playlist</h6>
+                    <ul id="questionsList"></ul>
+                </div>
+
+                <!-- ANSWERS WALL MOVED HERE -->
+                <div id="answersSection" style="display: none;" class="glass-card p-3">
+                    <div class="d-flex align-items-center mb-3">
+                        <span style="background: rgba(255,255,255,0.05); padding: 5px 15px; border-radius: 20px; color: #a78bfa; font-size: 0.8rem; font-weight: bold;">
+                            <i class="fas fa-comments me-2"></i> <span data-i18n="answersTitle">Round Answers</span>
+                        </span>
+                    </div>
+                    <div id="answersWall" class="d-flex flex-wrap gap-2"></div>
+                </div>
+            </div>
+
+            <!-- Right: Players -->
+            <div class="col-lg-4">
+                 <div class="glass-card h-100">
+                    <div class="d-flex justify-content-between align-items-center mb-4">
+                        <h5 class="m-0 fw-bold" data-i18n="playersTitle">PLAYERS</h5>
+                        <span class="badge bg-dark border border-secondary text-white-50" id="playerCount">0</span>
+                    </div>
+                    <ul id="playersList" class="list-unstyled"></ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const i18n = {
+            en: {
+                gameTitle: "WHAT? THE? TRACK?",
+                gameFinished: "🏆 GAME FINISHED 🏆",
+                winnerTitle: "WINNERS",
+                thName: "Name",
+                thScore: "Score",
+                btnReset: "RESET GAME",
+                btnReturn: "Return to Admin",
+                settingsTitle: "Game Settings",
+                yandexToken: "Yandex Token",
+                getToken: "Get Token Here",
+                tokenFromEnv: "Leave empty to use YANDEX_TOKEN from .env",
+                trackUrls: "Track Links / Playlists",
+                genStatus: "Generation Status:",
+                btnGenerate: "GENERATE",
+                gameIdLabel: "GAME ID:",
+                btnCreate: "CREATE GAME",
+                btnSettings: "SETTINGS",
+                btnSaved: "SAVED",
+                savedGamesTitle: "Saved Games Archive",
+                savedGamesInfo: "Loading a game will reset the current session and disconnect players.",
+                btnStartRound: "START ROUNDS",
+                btnEndGame: "FINISH GAME",
+                activeRound: "ACTIVE ROUND",
+                btnNext: "NEXT",
+                btnAnswer: "ANSWER",
+                playlist: "PLAYLIST",
+                playersTitle: "PLAYERS",
+                answersTitle: "ROUND ANSWERS",
+                noAnswers: "No answers yet",
+                track: "Track"
+            },
+            ru: {
+                gameTitle: "ЧО? ЗА? ТРЕК?",
+                gameFinished: "🏆 ИГРА ЗАВЕРШЕНА 🏆",
+                winnerTitle: "ПОБЕДИТЕЛИ",
+                thName: "Имя",
+                thScore: "Очки",
+                btnReset: "СБРОСИТЬ ИГРУ",
+                btnReturn: "Вернуться в админку",
+                settingsTitle: "Настройки игры",
+                yandexToken: "Яндекс Токен",
+                getToken: "Получить токен",
+                tokenFromEnv: "Пусто — возьмётся YANDEX_TOKEN из .env",
+                trackUrls: "Ссылки на треки / Плейлисты",
+                genStatus: "Статус генерации:",
+                btnGenerate: "СГЕНЕРИРОВАТЬ",
+                gameIdLabel: "ID ИГРЫ:",
+                btnCreate: "СОЗДАТЬ ИГРУ",
+                btnSettings: "НАСТРОЙКИ",
+                btnSaved: "СОХРАНЕННЫЕ",
+                savedGamesTitle: "Архив игр",
+                savedGamesInfo: "Загрузка игры сбросит текущую сессию и отключит игроков.",
+                btnStartRound: "ЗАПУСТИТЬ РАУНДЫ",
+                btnEndGame: "ЗАВЕРШИТЬ ИГРУ",
+                activeRound: "ТЕКУЩИЙ РАУНД",
+                btnNext: "СЛЕДУЮЩИЙ",
+                btnAnswer: "ОТВЕТ",
+                playlist: "ПЛЕЙЛИСТ",
+                playersTitle: "ИГРОКИ",
+                answersTitle: "ОТВЕТЫ В РАУНДЕ",
+                noAnswers: "Нет ответов",
+                track: "Трек"
+            }
+        };
+
+        let currentLang = localStorage.getItem('neuroLang') || 'en';
+        function t(key) { return i18n[currentLang][key] || key; }
+        // Имена и id приходят от игроков — в innerHTML только через escapeHtml.
+        function escapeHtml(value) {
+            return String(value == null ? '' : value).replace(/[&<>"']/g, (ch) => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[ch]));
+        }
+
+        function applyLanguage() {
+            document.querySelectorAll('[data-i18n]').forEach(el => {
+                el.innerText = t(el.dataset.i18n);
+            });
+            const enSpan = document.getElementById('langEn');
+            const ruSpan = document.getElementById('langRu');
+            if (currentLang === 'en') {
+                enSpan.classList.add('active-lang'); ruSpan.classList.remove('active-lang');
+            } else {
+                enSpan.classList.remove('active-lang'); ruSpan.classList.add('active-lang');
+            }
+            localStorage.setItem('neuroLang', currentLang);
+        }
+
+        function showDependencyError(message) {
+            let banner = document.getElementById('dependencyErrorBanner');
+            if (!banner) {
+                banner = document.createElement('div');
+                banner.id = 'dependencyErrorBanner';
+                banner.className = 'offline-error-banner';
+                document.body.appendChild(banner);
+            }
+            banner.textContent = message;
+        }
+
+        function createUnavailableSocket() {
+            return {
+                emit() {
+                    showDependencyError('Realtime client is unavailable. Verify that /static/socketio-lite.js is reachable through nginx on port 5002.');
+                },
+                on() {},
+            };
+        }
+
+        window.bootstrap = window.bootstrap || {};
+        if (!window.bootstrap.Modal) {
+            window.bootstrap.Modal = class {
+                constructor(element) {
+                    this.element = element;
+                    this.element.__offlineModalInstance = this;
+                }
+
+                show() {
+                    this.element.classList.add('show');
+                    document.body.classList.add('modal-open');
+                }
+
+                hide() {
+                    this.element.classList.remove('show');
+                    if (!document.querySelector('.modal.show')) {
+                        document.body.classList.remove('modal-open');
+                    }
+                }
+
+                static getInstance(element) {
+                    return element ? (element.__offlineModalInstance || null) : null;
+                }
+            };
+        }
+
+        // Пароль уходит уже при подключении (auth): вход готов раньше первого
+        // события, и клики, накопленные за время разрыва, не отклоняются.
+        const socket = typeof io === 'function'
+            ? io({auth: (cb) => cb({admin: true, key: getAdminKey()})})
+            : createUnavailableSocket();
+        const audio = document.getElementById('adminAudio');
+        let animationFrameId;
+        // Номер текущего вопроса: «Далее» отправляется вместе с ним, и сервер
+        // игнорирует повторное нажатие, пришедшее одновременно с кнопкой VIP.
+        let currentQIndex = null;
+
+        // Debounce для кнопок управления игрой
+        const debounce = (fn, delay) => {
+            let lastCall = 0;
+            return (...args) => {
+                const now = Date.now();
+                if (now - lastCall >= delay) {
+                    lastCall = now;
+                    fn(...args);
+                }
+            };
+        };
+        const emitNext = debounce(() => socket.emit('admin_next_question', {from_index: currentQIndex}), 500);
+        const emitAnswer = debounce(() => socket.emit('admin_show_answer'), 500);
+        const emitRepeat = debounce(() => socket.emit('admin_repeat_question'), 500);
+
+        document.addEventListener("DOMContentLoaded", () => {
+            applyLanguage();
+            if (typeof io !== 'function') {
+                showDependencyError('Local realtime client did not load. Verify that /static/socketio-lite.js is reachable through nginx on port 5002.');
+            }
+
+            document.querySelectorAll('.modal').forEach(el => {
+                if (!bootstrap.Modal.getInstance(el)) {
+                    new bootstrap.Modal(el);
+                }
+                el.addEventListener('click', (event) => {
+                    if (event.target === el) {
+                        const modal = bootstrap.Modal.getInstance(el);
+                        if (modal) {
+                            modal.hide();
+                        }
+                    }
+                });
+            });
+
+            document.querySelectorAll('[data-bs-toggle="modal"]').forEach(trigger => {
+                trigger.addEventListener('click', () => {
+                    const target = document.querySelector(trigger.getAttribute('data-bs-target'));
+                    const modal = bootstrap.Modal.getInstance(target) || new bootstrap.Modal(target);
+                    modal.show();
+                });
+            });
+
+            document.querySelectorAll('[data-bs-dismiss="modal"]').forEach(trigger => {
+                trigger.addEventListener('click', () => {
+                    const modal = trigger.closest('.modal');
+                    const instance = bootstrap.Modal.getInstance(modal);
+                    if (instance) {
+                        instance.hide();
+                    }
+                });
+            });
+
+            document.getElementById('langToggle').addEventListener('click', () => {
+                currentLang = currentLang === 'en' ? 'ru' : 'en';
+                applyLanguage();
+            });
+        });
+
+        // Пароль ведущего (ADMIN_PASSWORD в .env). Запоминается в этом браузере.
+        function getAdminKey() {
+            try { return localStorage.getItem('music_game_admin_key') || ''; }
+            catch (e) { return window.__musicGameAdminKey || ''; }
+        }
+        function setAdminKey(key) {
+            try { localStorage.setItem('music_game_admin_key', key); }
+            catch (e) { window.__musicGameAdminKey = key; }
+        }
+        socket.on('connect', () => socket.emit('join_admin', {key: getAdminKey()}));
+        socket.on('admin_auth_required', (d) => {
+            // Действие пришло раньше входа, а пароль уже сохранён — просто входим
+            // им ещё раз. Спрашиваем, только если пароля нет или он неверный.
+            if (!(d && d.retry) && getAdminKey()) {
+                socket.emit('join_admin', {key: getAdminKey()});
+                return;
+            }
+            const question = (d && d.retry)
+                ? (currentLang === 'en' ? 'Wrong host password. Try again:' : 'Неверный пароль ведущего. Введите ещё раз:')
+                : (currentLang === 'en' ? 'Host password:' : 'Пароль ведущего:');
+            const key = window.prompt(question, '');
+            if (key === null) return;
+            setAdminKey(key);
+            socket.emit('join_admin', {key: key});
+        });
+
+        function startGen() {
+            const token = document.getElementById('yandexToken').value;
+            const urls = document.getElementById('trackUrls').value;
+            if(!urls) return alert(currentLang === 'en' ? 'Add links!' : 'Добавьте ссылки!');
+            document.getElementById('btnGenStart').disabled = true;
+            document.getElementById('consoleOutput').innerHTML = '';
+            socket.emit('gen_start', {token: token, urls: urls});
+        }
+
+        window.givePoint = function(playerId) { socket.emit('admin_give_point', {id: playerId}); }
+        window.takePoint = function(playerId) { socket.emit('admin_take_point', {id: playerId}); }
+        window.removePlayer = function(playerId, playerName) {
+            const msg = currentLang === 'en'
+                ? `Remove player "${playerName}" from the game?`
+                : `Удалить игрока "${playerName}" из игры?`;
+            if(confirm(msg)) {
+                socket.emit('admin_remove_player', {id: playerId});
+            }
+        }
+
+        window.openSavedGames = function() {
+            const el = document.getElementById('savedGamesModal');
+            const modal = bootstrap.Modal.getInstance(el) || new bootstrap.Modal(el);
+            modal.show();
+            socket.emit('admin_get_saved_games');
+        }
+
+        socket.on('saved_games_list', (games) => {
+            const list = document.getElementById('savedGamesList');
+            const emptyMsg = document.getElementById('noSavedGames');
+            list.innerHTML = '';
+            
+            if (!games || games.length === 0) {
+                emptyMsg.style.display = 'block';
+                return;
+            }
+            emptyMsg.style.display = 'none';
+
+            games.forEach(g => {
+                const dateObj = new Date(g.timestamp * 1000);
+                const dateStr = dateObj.toLocaleDateString() + ' ' + dateObj.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                
+                let statusBadge = '';
+                if (g.is_valid) {
+                    statusBadge = `<span class="badge bg-success"><i class="fas fa-check me-1"></i> ${g.valid_count} tracks</span>`;
+                } else {
+                    statusBadge = `<span class="badge bg-danger"><i class="fas fa-exclamation-triangle me-1"></i> ${g.valid_count}/${g.questions_count}</span>`;
+                }
+
+                const tr = document.createElement('tr');
+                if(!g.is_valid) tr.style.background = 'rgba(220, 53, 69, 0.1)';
+                
+                tr.innerHTML = `
+                    <td class="fw-bold" style="font-family: monospace; font-size: 1.1em; color: #a78bfa;">${escapeHtml(g.game_id)}</td>
+                    <td class="text-white-50 small">${dateStr}</td>
+                    <td class="text-center">${statusBadge}</td>
+                    <td class="text-end">
+                        <button class="btn btn-sm btn-purple-ghost me-2" onclick="loadSavedGame('${escapeHtml(g.game_id)}')" ${!g.is_valid ? 'disabled' : ''}>
+                            <i class="fas fa-upload"></i>
+                        </button>
+                        <button class="btn btn-sm btn-danger-ghost" onclick="deleteSavedGame('${escapeHtml(g.game_id)}')">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </td>
+                `;
+                list.appendChild(tr);
+            });
+        });
+
+        window.loadSavedGame = function(gid) {
+            if(confirm(currentLang === 'en' ? `Load game ${gid}?` : `Загрузить игру ${gid}?`)) {
+                socket.emit('admin_load_game', {game_id: gid});
+                const el = document.getElementById('savedGamesModal');
+                const modal = bootstrap.Modal.getInstance(el);
+                if(modal) modal.hide();
+            }
+        };
+
+        window.deleteSavedGame = function(gid) {
+            if(confirm(currentLang === 'en' ? `Delete game ${gid} permanently?` : `Удалить игру ${gid} навсегда?`)) {
+                socket.emit('admin_delete_game', {game_id: gid});
+            }
+        };
+
+        socket.on('admin_success', (data) => console.log(data.msg));
+
+        socket.on('game_over', (data) => { showEndScreen(data); });
+
+        function showEndScreen(data) {
+            const overlay = document.getElementById('gameEndOverlay');
+            overlay.classList.add('show');
+            const winners = data.winners || [];
+            document.getElementById('winnerText').innerText = winners.length > 1 ? t('winnerTitle') : (currentLang === 'en' ? 'WINNER' : 'ПОБЕДИТЕЛЬ');
+            const names = winners.map(w => w.name).join(', ') || "-";
+            document.getElementById('finalWinnerName').innerText = names;
+            const tbody = document.getElementById('finalLeaderboard');
+            tbody.innerHTML = '';
+            data.leaderboard.forEach((p, index) => {
+                tbody.innerHTML += `<tr><td>${index+1}</td><td>${escapeHtml(p.name)}</td><td class="text-end">${escapeHtml(p.score)}</td></tr>`;
+            });
+            startFireworks();
+        }
+
+        window.restartGameFull = function() {
+            const msg = currentLang === 'en' ? 'Reset current game?' : 'Сбросить текущую игру?';
+            if(confirm(msg)) {
+                socket.emit('admin_hard_reset');
+                closeEndScreen();
+            }
+        }
+
+        window.closeEndScreen = function() {
+            stopFireworks(); 
+            document.getElementById('gameEndOverlay').classList.remove('show');
+        }
+
+        socket.on('admin_update', (d) => {
+            currentQIndex = (d.game_active && d.questions)
+                ? d.questions.findIndex(x => x.status === 'current') : null;
+            document.getElementById('dispGameId').innerText = d.game_id || "---";
+            document.getElementById('modalGameId').innerText = d.game_id || "";
+            document.getElementById('btnCreate').style.display = d.game_id ? 'none' : 'inline-block';
+            document.getElementById('btnSettings').disabled = !d.game_id;
+
+            const hasQ = d.questions && d.questions.length > 0;
+            document.getElementById('btnStartRound').disabled = !hasQ || d.game_active;
+            
+            document.getElementById('gameControls').style.display = d.game_active ? 'block' : 'none';
+            if(d.game_active) {
+                const currIdx = d.questions.findIndex(x => x.status === 'current');
+                document.getElementById('qNum').innerText = (currIdx !== -1) ? (currIdx + 1) : "—";
+            }
+
+            renderPlayers(d.players);
+            renderQuestions(d.questions);
+        });
+        
+        socket.on('admin_error', (d) => alert(d.msg));
+
+        socket.on('gen_log', (d) => {
+            const c = document.getElementById('consoleOutput');
+            const div = document.createElement('div');
+            div.textContent = '> ' + d.msg;
+            c.appendChild(div);
+            c.scrollTop = c.scrollHeight;
+        });
+        socket.on('gen_progress', (d) => document.getElementById('genBar').style.width = d.percent+"%");
+        socket.on('gen_finished', (d) => {
+            document.getElementById('btnGenStart').disabled = false;
+            if (d && d.ok === false) {
+                alert((currentLang === 'en' ? 'Generation stopped: ' : 'Генерация остановлена: ') + (d.msg || ''));
+            } else {
+                alert(currentLang === 'en' ? "Generation finished!" : "Генерация завершена!");
+            }
+        });
+
+        socket.on('play_audio', (d) => {
+            audio.onended = null;
+            audio.onerror = null;
+            audio.src = '/media/' + d.file;
+
+            audio.onerror = () => {
+                console.error("Audio file error:", d.file);
+                alert(currentLang === 'en' ? 'Audio file not found!' : 'Аудиофайл не найден!');
+                socket.emit('admin_audio_finished');
+            };
+
+            audio.onended = () => {
+                socket.emit('admin_audio_finished');
+            };
+
+            audio.play().catch(e => {
+                console.error("Audio play failed:", e);
+                alert(currentLang === 'en' ? 'Audio blocked by browser! Click anywhere and try again.' : 'Аудио заблокировано браузером! Кликните на страницу и попробуйте снова.');
+            });
+        });
+
+        socket.on('round_results', (res) => {
+            const wall = document.getElementById('answersWall');
+            wall.innerHTML = '';
+            document.getElementById('answersSection').style.display = 'block';
+            if(res.length === 0) {
+                wall.innerHTML = `<p class="text-white-50 small w-100 text-center">${t('noAnswers')}</p>`;
+                return;
+            }
+            res.forEach(r => {
+                const cls = r.is_correct ? 'ans-correct' : 'ans-wrong';
+                const col = document.createElement('div');
+                col.className = 'col-auto';
+                const card = document.createElement('div');
+                card.className = `ans-card ${cls} text-center`;
+                const nameDiv = document.createElement('div');
+                nameDiv.className = 'fw-bold text-white mb-1';
+                nameDiv.style.fontSize = '0.9rem';
+                nameDiv.textContent = r.name;
+                const ansDiv = document.createElement('div');
+                ansDiv.className = 'small text-white-50';
+                ansDiv.textContent = r.answer || '---';
+                const icon = document.createElement('i');
+                icon.className = r.is_correct ? 'fas fa-check text-success ms-1' : 'fas fa-times text-danger ms-1';
+                ansDiv.appendChild(icon);
+                card.appendChild(nameDiv);
+                card.appendChild(ansDiv);
+                col.appendChild(card);
+                wall.appendChild(col);
+            });
+        });
+
+        function renderPlayers(list) {
+            document.getElementById('playerCount').innerText = list.length;
+            const container = document.getElementById('playersList');
+            container.innerHTML = '';
+            list.forEach(p => {
+                const li = document.createElement('li');
+                li.className = 'player-item';
+
+                const leftDiv = document.createElement('div');
+                leftDiv.className = 'd-flex align-items-center gap-2';
+
+                const removeBtn = document.createElement('button');
+                removeBtn.className = 'btn btn-mini btn-danger-ghost';
+                removeBtn.title = 'Remove player';
+                removeBtn.innerHTML = '<i class="fas fa-user-times"></i>';
+                removeBtn.onclick = () => removePlayer(p.id, p.name);
+
+                const nameSpan = document.createElement('span');
+                nameSpan.className = 'fw-bold text-white text-truncate';
+                nameSpan.style.maxWidth = '120px';
+                nameSpan.textContent = p.name;
+
+                leftDiv.appendChild(removeBtn);
+                leftDiv.appendChild(nameSpan);
+
+                const rightDiv = document.createElement('div');
+                rightDiv.className = 'd-flex align-items-center gap-1';
+
+                const scoreBadge = document.createElement('span');
+                scoreBadge.className = 'badge bg-primary rounded-pill';
+                scoreBadge.textContent = p.score;
+
+                const minusBtn = document.createElement('button');
+                minusBtn.className = 'btn btn-mini btn-danger-ghost';
+                minusBtn.title = 'Remove point';
+                minusBtn.innerHTML = '<i class="fas fa-minus"></i>';
+                minusBtn.onclick = () => takePoint(p.id);
+
+                const plusBtn = document.createElement('button');
+                plusBtn.className = 'btn btn-mini btn-purple-ghost';
+                plusBtn.title = 'Add point';
+                plusBtn.innerHTML = '<i class="fas fa-plus"></i>';
+                plusBtn.onclick = () => givePoint(p.id);
+
+                rightDiv.appendChild(scoreBadge);
+                rightDiv.appendChild(minusBtn);
+                rightDiv.appendChild(plusBtn);
+
+                li.appendChild(leftDiv);
+                li.appendChild(rightDiv);
+                container.appendChild(li);
+            });
+        }
+
+        function renderQuestions(list) {
+            document.getElementById('questionsList').innerHTML = list.map((q, i) => {
+                let cls = '', icon = '<i class="far fa-circle"></i>';
+                if (q.status === 'done') { cls = 'q-done'; icon = '<i class="fas fa-check"></i>'; }
+                else if (q.status === 'current') { cls = 'q-current'; icon = '<i class="fas fa-music"></i>'; }
+                return `<li class="${cls} text-truncate">
+                    <span class="me-2">${icon}</span> 
+                    <strong class="me-2">${t('track')} ${i+1}</strong> 
+                </li>`;
+            }).join('');
+        }
+
+        function startFireworks() {
+            const canvas = document.getElementById('fireworksCanvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            let particles = [];
+
+            function Particle(x, y, color) {
+                this.x = x; this.y = y; this.color = color;
+                this.velocity = { x: (Math.random() - 0.5) * 8, y: (Math.random() - 0.5) * 8 };
+                this.alpha = 1; this.friction = 0.96;
+            }
+            Particle.prototype.draw = function() {
+                ctx.globalAlpha = this.alpha;
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, 4, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            Particle.prototype.update = function() {
+                this.velocity.x *= this.friction; this.velocity.y *= this.friction;
+                this.x += this.velocity.x; this.y += this.velocity.y;
+                this.alpha -= 0.01;
+            }
+
+            function animate() {
+                animationFrameId = requestAnimationFrame(animate); 
+                ctx.fillStyle = 'rgba(15, 12, 41, 0.2)'; 
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                for (let i = particles.length - 1; i >= 0; i--) {
+                    const p = particles[i];
+                    if (p.alpha > 0) { p.update(); p.draw(); } 
+                    else particles.splice(i, 1);
+                }
+            }
+            
+            const interval = setInterval(() => {
+                if (!document.getElementById('gameEndOverlay').classList.contains('show')) {
+                    clearInterval(interval);
+                    return;
+                }
+                const x = Math.random() * canvas.width;
+                const y = Math.random() * canvas.height / 2;
+                const color = `hsl(${Math.random() * 360}, 50%, 50%)`;
+                for (let i = 0; i < 30; i++) particles.push(new Particle(x, y, color));
+            }, 800);
+            
+            animate();
+        }
+
+        function stopFireworks() {
+            if (animationFrameId) cancelAnimationFrame(animationFrameId);
+            const canvas = document.getElementById('fireworksCanvas');
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+    </script>
+</body>
+</html>

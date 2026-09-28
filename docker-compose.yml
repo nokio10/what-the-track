@@ -1,0 +1,90 @@
+services:
+  # --- СЕРВИС ИГРЫ ---
+  game-app:
+    build: .
+    container_name: music-quiz-game
+    restart: always
+    # Один процесс и общий in-memory state игры, но без deprecated eventlet.
+    # Для Socket.IO держим высокий запас потоков, потому что соединения долгоживущие.
+    command: gunicorn --worker-class gthread --threads 100 --workers 1 --bind 0.0.0.0:5000 --timeout 120 game_app:app
+    # Порты можно не пробрасывать наружу (5002), если есть Nginx на 80 порту.
+    # Но для отладки можно оставить.
+    expose:
+      - "5000"
+    environment:
+      - GENERATOR_URL=http://generator:5001
+      - FLASK_ENV=production
+      # Пароль ведущего для /admin. Задаётся в .env; пусто — без пароля.
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
+    volumes:
+      - ./media:/app/media
+      - ./templates:/app/templates
+    depends_on:
+      - generator
+
+  # --- ГЕНЕРАТОР (НЕЙРОСЕТИ) ---
+  generator:
+    build: .
+    container_name: music-quiz-generator
+    restart: always
+    command: python generator_service.py
+    # Внутренний API: наружу не публикуется — игра ходит к нему по сети compose.
+    # Раньше порт 5001 был открыт на хосте, и задачу мог поставить кто угодно.
+    expose:
+      - "5001"
+    environment:
+      - WHISPER_DEVICE=cpu
+      - WHISPER_COMPUTE_TYPE=int8
+      - WHISPER_THREADS=8
+      - WHISPER_BATCH_SIZE=8
+      - MDX_BATCH_SIZE=1
+      - HF_HOME=/app/whisper_cache
+      - TORCH_HOME=/app/whisper_cache
+      # Токен нужен только если модель WhisperX требует авторизации (обычно нет для large-v3)
+      - HF_TOKEN=
+      - OMP_NUM_THREADS=8
+      - MKL_NUM_THREADS=8
+      # Треки без текста: согласие трёх моделей (on, по умолчанию) или старый
+      # путь (off). Для on нужен сервис gigaam; без него треки идут старым путём.
+      - CONSENSUS_MODE=${CONSENSUS_MODE:-on}
+      - GIGAAM_URL=http://gigaam:5003
+      # Токен Яндекс Музыки по умолчанию: берётся, если поле в админке пустое.
+      - YANDEX_TOKEN=${YANDEX_TOKEN:-}
+    volumes:
+      - ./media:/app/media
+      - ./whisper_cache:/app/whisper_cache
+      - ./mdx_cache:/app/mdx_cache
+      # Журнал решений согласия: с ответами, поэтому не в media (её раздаёт nginx).
+      - ./logs:/app/logs
+    depends_on:
+      - gigaam
+
+  # --- GigaAM v3 (СОГЛАСИЕ МОДЕЛЕЙ) ---
+  # Отдельный контейнер: pyannote.audio 4.x конфликтует с пинами WhisperX.
+  gigaam:
+    build: ./gigaam_service
+    container_name: music-quiz-gigaam
+    restart: always
+    expose:
+      - "5003"
+    environment:
+      # Токен HuggingFace нужен pyannote/segmentation-3.0 (VAD для longform).
+      # Задаётся в .env, в файл не пишется.
+      - HF_TOKEN=${HF_TOKEN:-}
+      - MEDIA_ROOT=/app/media
+      # Модели GigaAM выгружаются из видеопамяти после стольких секунд простоя.
+      - GIGAAM_IDLE_UNLOAD_SEC=${GIGAAM_IDLE_UNLOAD_SEC:-60}
+    volumes:
+      - ./media:/app/media
+      - ./gigaam_cache:/cache
+  # --- NGINX (ВХОДНАЯ ТОЧКА) ---
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "5002:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf
+      - ./media:/usr/share/nginx/html/media
+    depends_on:
+      - game-app  # <--- ИСПРАВЛЕНО ИМЯ (было game)
+    restart: always

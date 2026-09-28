@@ -1,0 +1,18 @@
+flask
+flask-socketio>=5.3,<6
+python-socketio>=5.11,<6
+python-engineio>=4.8,<5
+gunicorn
+simple-websocket>=1.0,<2
+psutil
+requests
+pydub
+yandex-music
+# Часть речи слова-ответа в режиме согласия (CONSENSUS_MODE): без служебных
+# слов, существительные раньше. Без библиотеки режим работает, но без этого.
+pymorphy3
+audio-separator
+demucs
+# Закрепляем transformers, чтобы починить WhisperX
+# WhisperX в конце
+git+https://github.com/m-bain/whisperx.git

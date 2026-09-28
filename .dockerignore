@@ -1,0 +1,22 @@
+# Игнорируем тяжелые папки с данными
+whisper_cache
+mdx_cache
+media
+temp_downloads
+
+# Лаба в образах игры не нужна вовсе. Раньше в образ попадал asr_lab/.env с
+# токеном HuggingFace: шаблон .env ниже исключает только корневой файл.
+asr_lab
+logs
+*.bak*
+
+# Игнорируем системные файлы
+.git
+__pycache__
+*.pyc
+.env
+**/.env
+venv
+.idea
+.vscode
+gigaam_cache

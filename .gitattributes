@@ -1,0 +1,6 @@
+# В репозитории — переводы строк LF: образы собираются под Linux, и
+# Dockerfile/скрипты с CRLF там ломаются. При клонировании на Windows git
+# сам вернёт привычные CRLF, если так настроен core.autocrlf.
+* text=auto
+*.sh text eol=lf
+Dockerfile text eol=lf
