@@ -15,7 +15,7 @@ validate_player_answer_text = game_app_logic["validate_player_answer_text"]
 MIN_PLAYER_ANSWER_LENGTH = game_app_logic["MIN_PLAYER_ANSWER_LENGTH"]
 
 BASE_DIR = Path(__file__).resolve().parents[1]
-INDEX_TEMPLATE = BASE_DIR / "templates" / "index.html"
+INDEX_TEMPLATE = BASE_DIR / "src" / "game" / "templates" / "index.html"
 
 
 def make_word(word, start, end, **extra):

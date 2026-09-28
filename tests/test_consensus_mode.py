@@ -255,7 +255,7 @@ class GenerationSubprocessTests(unittest.TestCase):
         self.assertEqual(logic["_GIGAAM_STATE"]["failed_at"], 123.0)
 
     def test_worker_runs_generation_in_subprocess_by_default(self):
-        source = (ROOT / "generator_service.py").read_text(encoding="utf-8")
+        source = (ROOT / "src" / "game" / "generator_service.py").read_text(encoding="utf-8")
         self.assertIn('os.environ.get("GENERATION_IN_SUBPROCESS", "1")', source)
         self.assertIn("run_generation_isolated(task_data)", source)
         self.assertIn('if multiprocessing.current_process().name == "MainProcess":', source)
@@ -347,14 +347,14 @@ class ExpandYandexUrlsTests(unittest.TestCase):
 
 class ConsensusModeDefaultTests(unittest.TestCase):
     def test_mode_is_on_by_default_and_gigaam_always_starts(self):
-        source = (ROOT / "generator_service.py").read_text(encoding="utf-8")
+        source = (ROOT / "src" / "game" / "generator_service.py").read_text(encoding="utf-8")
         self.assertIn('CONSENSUS_MODE = os.environ.get("CONSENSUS_MODE", "on")', source)
         compose = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
         self.assertIn("CONSENSUS_MODE=${CONSENSUS_MODE:-on}", compose)
         self.assertNotIn("profiles:", compose)
 
     def test_yandex_token_can_come_from_env(self):
-        source = (ROOT / "generator_service.py").read_text(encoding="utf-8")
+        source = (ROOT / "src" / "game" / "generator_service.py").read_text(encoding="utf-8")
         self.assertIn('YANDEX_TOKEN = os.environ.get("YANDEX_TOKEN", "").strip()', source)
         self.assertIn("if not token and YANDEX_TOKEN:", source)
         compose = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")

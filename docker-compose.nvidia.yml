@@ -1,7 +1,7 @@
 services:
   generator:
     build:
-      context: .
+      context: ./src/game
       args:
         TORCH_INDEX_URL: ${TORCH_INDEX_URL_GPU:-https://download.pytorch.org/whl/cu128}
         TORCH_VERSION: ${TORCH_VERSION_GPU:-2.8.0+cu128}
@@ -23,7 +23,7 @@ services:
 
   gigaam:
     build:
-      context: ./gigaam_service
+      context: ./src/gigaam
       args:
         TORCH_INDEX_URL: ${TORCH_INDEX_URL_GPU:-https://download.pytorch.org/whl/cu128}
         TORCH_VERSION: ${TORCH_VERSION_GPU:-2.8.0+cu128}

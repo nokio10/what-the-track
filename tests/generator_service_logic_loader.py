@@ -3,7 +3,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-GENERATOR_SERVICE = ROOT / "generator_service.py"
+GENERATOR_SERVICE = ROOT / "src" / "game" / "generator_service.py"
 
 CONSTANT_NAMES = {
     "ALBUM_TRACK_RE",

@@ -3,7 +3,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-GAME_APP = ROOT / "game_app.py"
+GAME_APP = ROOT / "src" / "game" / "game_app.py"
 
 CONSTANT_NAMES = {
     "MIN_PLAYER_ANSWER_LENGTH",

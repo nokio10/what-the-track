@@ -3,16 +3,17 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-GENERATOR_SERVICE = ROOT / "generator_service.py"
+GAME_DIR = ROOT / "src" / "game"
+GENERATOR_SERVICE = GAME_DIR / "generator_service.py"
 DOCKER_COMPOSE = ROOT / "docker-compose.yml"
-GAME_APP = ROOT / "game_app.py"
-NGINX_CONF = ROOT / "nginx.conf"
-REQUIREMENTS = ROOT / "requirements.txt"
+GAME_APP = GAME_DIR / "game_app.py"
+NGINX_CONF = ROOT / "src" / "nginx" / "nginx.conf"
+REQUIREMENTS = GAME_DIR / "requirements.txt"
 LEGACY_MODULES = [
-    ROOT / "lyrics_alignment_experiment.py",
-    ROOT / "question_logic.py",
-    ROOT / "yandex_request_logic.py",
-    ROOT / "yandex_url_logic.py",
+    GAME_DIR / "lyrics_alignment_experiment.py",
+    GAME_DIR / "question_logic.py",
+    GAME_DIR / "yandex_request_logic.py",
+    GAME_DIR / "yandex_url_logic.py",
 ]
 
 
@@ -90,6 +91,19 @@ class RuntimeLayoutTests(unittest.TestCase):
         self.assertIn("- WHISPER_THREADS=8", compose)
         self.assertIn("- WHISPER_BATCH_SIZE=8", compose)
         self.assertIn("- MDX_BATCH_SIZE=1", compose)
+
+    def test_services_build_from_src(self):
+        # Код лежит в src/: корень репозитория — только compose, README и настройки.
+        compose = DOCKER_COMPOSE.read_text(encoding="utf-8")
+        self.assertEqual(compose.count("build: ./src/game"), 2)
+        self.assertIn("build: ./src/gigaam", compose)
+        self.assertIn("./src/game/templates:/app/templates", compose)
+        self.assertIn("./src/nginx/nginx.conf:/etc/nginx/conf.d/default.conf", compose)
+        nvidia = (ROOT / "docker-compose.nvidia.yml").read_text(encoding="utf-8")
+        self.assertIn("context: ./src/game", nvidia)
+        self.assertIn("context: ./src/gigaam", nvidia)
+        for path in (GAME_DIR / "Dockerfile", ROOT / "src" / "gigaam" / "Dockerfile", NGINX_CONF):
+            self.assertTrue(path.exists(), path)
 
     def test_nginx_uses_docker_dns_reresolution_for_game_app(self):
         nginx_conf = NGINX_CONF.read_text(encoding="utf-8")

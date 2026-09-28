@@ -3,8 +3,9 @@ from pathlib import Path
 
 
 BASE_DIR = Path(__file__).resolve().parents[1]
-INDEX_TEMPLATE = BASE_DIR / "templates" / "index.html"
-ADMIN_TEMPLATE = BASE_DIR / "templates" / "admin.html"
+GAME_DIR = BASE_DIR / "src" / "game"
+INDEX_TEMPLATE = GAME_DIR / "templates" / "index.html"
+ADMIN_TEMPLATE = GAME_DIR / "templates" / "admin.html"
 
 
 class OfflineTemplateTests(unittest.TestCase):
@@ -64,7 +65,7 @@ class OfflineTemplateTests(unittest.TestCase):
         self.assertIn("window.bootstrap = window.bootstrap || {}", template)
 
     def test_local_socketio_lite_client_exists(self):
-        client_path = BASE_DIR / "static" / "socketio-lite.js"
+        client_path = GAME_DIR / "static" / "socketio-lite.js"
 
         self.assertTrue(client_path.exists())
         self.assertIn("class LiteSocket", client_path.read_text(encoding="utf-8"))
@@ -95,7 +96,7 @@ class HostAndPlayerSessionTests(unittest.TestCase):
         # приходят раньше join_admin и без этого отклонялись бы.
         admin = ADMIN_TEMPLATE.read_text(encoding="utf-8")
         self.assertIn("io({auth: (cb) => cb({admin: true, key: getAdminKey()})})", admin)
-        lite = (BASE_DIR / "static" / "socketio-lite.js").read_text(encoding="utf-8")
+        lite = (GAME_DIR / "static" / "socketio-lite.js").read_text(encoding="utf-8")
         self.assertIn("_sendConnect()", lite)
         self.assertNotIn('this._sendRaw("40");', lite)
 

@@ -1,7 +1,7 @@
 services:
   # --- СЕРВИС ИГРЫ ---
   game-app:
-    build: .
+    build: ./src/game
     container_name: music-quiz-game
     restart: always
     # Один процесс и общий in-memory state игры, но без deprecated eventlet.
@@ -18,13 +18,13 @@ services:
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
     volumes:
       - ./media:/app/media
-      - ./templates:/app/templates
+      - ./src/game/templates:/app/templates
     depends_on:
       - generator
 
   # --- ГЕНЕРАТОР (НЕЙРОСЕТИ) ---
   generator:
-    build: .
+    build: ./src/game
     container_name: music-quiz-generator
     restart: always
     command: python generator_service.py
@@ -62,7 +62,7 @@ services:
   # --- GigaAM v3 (СОГЛАСИЕ МОДЕЛЕЙ) ---
   # Отдельный контейнер: pyannote.audio 4.x конфликтует с пинами WhisperX.
   gigaam:
-    build: ./gigaam_service
+    build: ./src/gigaam
     container_name: music-quiz-gigaam
     restart: always
     expose:
@@ -83,7 +83,7 @@ services:
     ports:
       - "5002:80"
     volumes:
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf
+      - ./src/nginx/nginx.conf:/etc/nginx/conf.d/default.conf
       - ./media:/usr/share/nginx/html/media
     depends_on:
       - game-app  # <--- ИСПРАВЛЕНО ИМЯ (было game)
