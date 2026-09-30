@@ -21,11 +21,11 @@ app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY') or secrets.token_hex(32)
 # Используем threading + gunicorn gthread/simple-websocket вместо eventlet.
 socketio = SocketIO(
     app,
-    cors_allowed_origins="*",
+    # Default same-origin policy also checks WebSocket handshakes.
     async_mode='threading',
     ping_timeout=60,  # Увеличиваем timeout для медленных соединений
     ping_interval=25,  # Частота ping для проверки соединения
-    logger=True,
+    logger=False,
     engineio_logger=False
 )
 
@@ -45,7 +45,7 @@ if not os.path.exists(MEDIA_ROOT): os.makedirs(MEDIA_ROOT)
 
 def is_valid_game_id(gid):
     """game_id подставляется в пути к файлам — только буквы, цифры, «_» и «-»."""
-    return bool(gid) and isinstance(gid, str) and bool(GAME_ID_RE.match(gid))
+    return bool(gid) and isinstance(gid, str) and bool(GAME_ID_RE.fullmatch(gid))
 
 
 def online_players(players):
@@ -449,6 +449,7 @@ def player_next_question():
         # VIP — первый из игроков на связи; «Далее» — только после показа ответа.
         if request.sid != pick_vip_sid(game.players): return
         if game.current_phase != 'answer': return
+        if not game.next_allowed: return
         if not game.is_active: return
         _advance_question_locked()
 

@@ -56,3 +56,8 @@ env/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Local article materials, lab worktree and independent transcription project.
+/article/
+/asr_lab_wt/
+/whisperx-large-v3-transcribe-server/

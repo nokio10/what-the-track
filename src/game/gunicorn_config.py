@@ -1,30 +1,12 @@
-import os
-
-# --- ВАЖНЕЙШИЕ НАСТРОЙКИ ---
+"""Single-process Socket.IO server; state is held in memory."""
 bind = "0.0.0.0:5000"
-worker_class = 'eventlet'  # Обязательно для сокетов
-
-# СТРОГО 1 воркер, так как состояние игры хранится в памяти (RAM)
-# Если поставить больше, игроки не увидят друг друга
-workers = 1 
-
-# Eventlet использует гринлеты, потоки тут не нужны
-threads = 1
-
-# --- НАДЕЖНОСТЬ ---
-# Увеличиваем таймаут, чтобы сокеты не отваливались при долгих загрузках
-timeout = 300
-keepalive = 300  # Для WebSocket нужен долгий keepalive
-
-# Отключаем авто-перезагрузку по количеству запросов, 
-# чтобы не сбросить игру посередине раунда
-max_requests = 0 
-
-# --- ЛОГИРОВАНИЕ ---
-accesslog = '-' # stdout
-errorlog = '-'  # stderr
-loglevel = 'info'
-
-# --- ПРОЧЕЕ ---
-# Preload может конфликтовать с SocketIO при запуске
+worker_class = "gthread"
+workers = 1
+threads = 100
+timeout = 120
+keepalive = 5
+max_requests = 0
+accesslog = "-"
+errorlog = "-"
+loglevel = "info"
 preload_app = False

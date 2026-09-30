@@ -482,7 +482,7 @@ GAME_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
 
 def is_valid_game_id(game_id):
     """game_id подставляется в пути к папкам — только буквы, цифры, «_» и «-»."""
-    return isinstance(game_id, str) and bool(GAME_ID_RE.match(game_id))
+    return isinstance(game_id, str) and bool(GAME_ID_RE.fullmatch(game_id))
 
 
 def resolve_device():
@@ -1950,6 +1950,61 @@ def mix_support(word, mix_word_lists, window=CONSENSUS_MIX_SUPPORT_SEC):
                       and abs(w["start"] - start) <= window for w in words))
 
 
+# Текст вопроса в режиме согласия. Слова и таймкоды — от WhisperX: по ним
+# режется звук. Знаки препинания и заглавные буквы — от GigaAM e2e RNN-T: у
+# WhisperX без промпта «.», «!», «?» стоят после 3 слов из 100, у RNN-T — после
+# 12. Строка переносится после «.», «!», «?» и перед словом, которое RNN-T
+# пишет с заглавной, — как строки в LRC. На 63 треках asr_lab такой перенос
+# попадает в конец строки LRC в 69 % случаев и находит 68 % концов строк;
+# перенос по паузам в миксе — 53 % и 18 %.
+QUESTION_TEXT_MARKS = ".,!?;:…"
+
+
+def _trailing_marks(text):
+    """Знаки препинания в конце слова, без кавычек и скобок."""
+    tail = re.search(r"\W+$", text or "")
+    return "".join(ch for ch in tail.group(0) if ch in QUESTION_TEXT_MARKS) if tail else ""
+
+
+def _set_first_letter_case(text, upper):
+    """Регистр первой буквы; аббревиатуры («МС») не трогаются."""
+    if not text[:1].isalpha() or text[1:] != text[1:].lower():
+        return text
+    return (text[0].upper() if upper else text[0].lower()) + text[1:]
+
+
+def apply_question_punctuation(words, whisper_raw, punct_words):
+    """Текст вопроса для слов генератора: ``question_text`` и ``line_start``.
+
+    Знаки и регистр переносятся только на слово, которое модель пунктуации
+    услышала так же и рядом по времени (выравнивание — как в согласии).
+    Остальные слова остаются такими, как их написал WhisperX. ``whisper_raw`` —
+    сырые слова WhisperX, из которых получен ``words``.
+    """
+    tokens_w = consensus_tokens(whisper_raw)
+    tokens_p = consensus_tokens(punct_words)
+    same = {tokens_w[a][0]: punct_words[tokens_p[b][0]]["word"]
+            for a, b in _consensus_pair(tokens_w, tokens_p).items()}
+    # map_tiers_to_words переносит любые значения с сырых слов на список генератора.
+    heard = map_tiers_to_words(same, whisper_raw, words)
+    previous = ""
+    for index, word in enumerate(words):
+        text = (word.get("word") or "").strip()
+        starts = False
+        other = (heard.get(index) or "").strip()
+        if other:
+            text = text.rstrip(QUESTION_TEXT_MARKS) + _trailing_marks(other)
+            starts = re.sub(r"^\W+", "", other)[:1].isupper()
+            text = _set_first_letter_case(text, starts)
+        if CONSENSUS_STRONG_END.search(previous):
+            starts = True
+            text = _set_first_letter_case(text, True)
+        word["question_text"] = text
+        word["line_start"] = starts
+        previous = text
+    return words
+
+
 def select_general_question(all_words, allowed=None, prefer=None, logger=None):
     """Индекс слова-ответа для трека без текста или None.
 
@@ -2157,6 +2212,10 @@ def _should_break_general_context_line(previous_word, current_word):
     if not previous_word or not current_word:
         return False
 
+    if "line_start" in current_word:
+        # Режим согласия: строки по пунктуации GigaAM (apply_question_punctuation).
+        return bool(current_word["line_start"])
+
     if previous_word.get("is_eol"):
         return True
 
@@ -2241,7 +2300,7 @@ def build_context_string(all_words, target_idx, **kwargs):
         # Распознанное слово добавляется всегда: исполнитель повторяет слова,
         # и склейка здесь выбрасывала настоящие повторы из текста вопроса.
         # Склеиваются только восстановленные пропуски — они и дают дубли.
-        current_line_words.append(all_words[idx]["word"])
+        current_line_words.append(all_words[idx].get("question_text") or all_words[idx]["word"])
         previous_context_word = current_word
 
     if current_line_words:
@@ -3201,7 +3260,8 @@ def run_consensus_pipeline(audio_path, device):
     Если на миксе не осталось ни одного годного вопроса — BS-RoFormer и тот же
     отбор на отделённом вокале, но кандидат принимается, только если хотя бы две
     модели из трёх слышат это слово и на миксе: игрок слушает микс, а не вокал.
-    Иначе трек пропускается.
+    Иначе трек пропускается. Текст вопроса — слова WhisperX со знаками и
+    строками по GigaAM RNN-T (apply_question_punctuation).
     """
     t0 = time.time()
     mix = _recognize_for_consensus(prepare_asr_audio(audio_path), device)
@@ -3215,7 +3275,7 @@ def run_consensus_pipeline(audio_path, device):
     # Спойлер проверяется по сырым словам всех трёх моделей на миксе: в
     # отфильтрованном списке WhisperX повтор ответа мог выпасть по уверенности.
     raw_index = raw_word_index(mix_lists)
-    words = mix["words"]
+    source, words = mix, mix["words"]
     info = _consensus_info(mix)
     allowed, prefer = consensus_candidates(info, words, raw_index=raw_index)
     target_idx = select_general_question(words, allowed=allowed, prefer=prefer)
@@ -3244,9 +3304,10 @@ def run_consensus_pipeline(audio_path, device):
             fallback_idx = select_general_question(
                 vocals["words"], allowed=vocal_allowed, prefer=vocal_prefer)
             if fallback_idx is not None:
-                words, info, target_idx = vocals["words"], vocal_info, fallback_idx
+                source, words, info, target_idx = vocals, vocals["words"], vocal_info, fallback_idx
 
     if target_idx is not None:
+        apply_question_punctuation(words, source["whisper"], source["gigaam_rnnt"])
         word = words[target_idx]
         q_times, a_times = calculate_timings(words, target_idx)
         record.update({

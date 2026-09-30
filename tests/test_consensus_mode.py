@@ -152,6 +152,51 @@ class PunctuationTests(unittest.TestCase):
         self.assertNotIn(2, allowed)
 
 
+class QuestionTextTests(unittest.TestCase):
+    """Текст вопроса: слова WhisperX, знаки, регистр и строки — по GigaAM RNN-T."""
+
+    def annotate(self, whisper_tokens, rnnt_tokens):
+        raw = words(whisper_tokens)
+        return logic["apply_question_punctuation"](
+            [dict(w) for w in raw], raw, words(rnnt_tokens, shift=0.1))
+
+    def test_marks_and_case_come_from_rnnt_on_the_same_word(self):
+        got = self.annotate(["Шли", "Домой", "вдоль", "реки"], ["шли", "домой.", "Вдоль", "реки,"])
+        self.assertEqual([w["question_text"] for w in got], ["шли", "домой.", "Вдоль", "реки,"])
+        self.assertEqual([w["line_start"] for w in got], [False, False, True, False])
+
+    def test_word_rnnt_heard_differently_keeps_whisper_text(self):
+        got = self.annotate(["первый", "Второй,", "третий"], ["первый", "иной", "третий"])
+        self.assertEqual([w["question_text"] for w in got], ["первый", "Второй,", "третий"])
+        self.assertFalse(any(w["line_start"] for w in got))
+
+    def test_word_after_sentence_end_starts_capitalized_line(self):
+        got = self.annotate(["первый.", "второй"], ["иной", "второй"])
+        self.assertEqual([w["question_text"] for w in got], ["первый.", "Второй"])
+        self.assertTrue(got[1]["line_start"])
+
+    def test_abbreviation_case_is_kept(self):
+        got = self.annotate(["МС", "читает"], ["мс", "читает"])
+        self.assertEqual(got[0]["question_text"], "МС")
+
+    def test_context_lines_follow_punctuation_not_pauses(self):
+        tokens = ["мы", "шли", "домой", "вдоль", "реки", "и", "пели", "песню"]
+        # Пауза 0.8 с после «вдоль»: без разметки строка рвалась бы на ней.
+        raw = [{"word": t, "start": 20.0 + i * 0.5 + (0.8 if i >= 4 else 0.0),
+                "end": 20.4 + i * 0.5 + (0.8 if i >= 4 else 0.0)} for i, t in enumerate(tokens)]
+        rnnt = [dict(w) for w in raw]
+        rnnt[2]["word"], rnnt[3]["word"] = "домой.", "Вдоль"
+        build = logic["build_context_string"]
+        self.assertEqual(build([dict(w) for w in raw], 7), "мы шли домой вдоль\nреки и пели ___")
+        annotated = logic["apply_question_punctuation"]([dict(w) for w in raw], raw, rnnt)
+        self.assertEqual(build(annotated, 7), "мы шли домой.\nВдоль реки и пели ___")
+
+    def test_consensus_pipeline_annotates_the_chosen_source(self):
+        source = (ROOT / "src" / "game" / "generator_service.py").read_text(encoding="utf-8")
+        self.assertIn('apply_question_punctuation(words, source["whisper"], source["gigaam_rnnt"])',
+                      source)
+
+
 class MixSupportTests(unittest.TestCase):
     def test_counts_models_hearing_the_word_nearby(self):
         target = {"word": "Пятый,", "start": 22.0, "end": 22.4}

@@ -13,6 +13,6 @@ yandex-music
 pymorphy3
 audio-separator
 demucs
-# Закрепляем transformers, чтобы починить WhisperX
-# WhisperX в конце
-git+https://github.com/m-bain/whisperx.git
+# WhisperX закреплён на коммите проверенного рабочего образа.
+# Обновляйте вместе с проверкой совместимости PyTorch и audio-separator.
+git+https://github.com/m-bain/whisperx.git@771b4a14a9486f8fd5aef18ef49e35d639523dd3

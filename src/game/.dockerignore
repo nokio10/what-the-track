@@ -14,3 +14,9 @@ gigaam_cache
 *.bak*
 __pycache__
 *.pyc
+
+.env.*
+**/.env.*
+*.pem
+*.key
+.git

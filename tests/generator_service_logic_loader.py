@@ -28,6 +28,7 @@ CONSTANT_NAMES = {
     "ANSWER_FUNCTION_POS",
     "CONSENSUS_STRONG_END",
     "CONSENSUS_ANY_END",
+    "QUESTION_TEXT_MARKS",
     "GIGAAM_URL",
     "GAME_ID_RE",
     "ALBUM_ONLY_RE",
@@ -123,6 +124,9 @@ SYMBOL_NAMES = {
     "mix_support",
     "map_tiers_to_words",
     "select_general_question",
+    "_trailing_marks",
+    "_set_first_letter_case",
+    "apply_question_punctuation",
 }
 
 

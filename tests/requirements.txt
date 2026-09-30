@@ -1,0 +1,5 @@
+# Lightweight dependencies; no audio models or PyTorch required.
+flask>=3.1,<4
+flask-socketio>=5.3,<6
+requests>=2.32,<3
+pymorphy3>=2,<3
