@@ -85,6 +85,7 @@ class GameState:
         self.inputs_enabled = False
         self.final_results = None
         self.next_allowed = False   # аудио ответа дослушано: VIP может листать
+        self.last_reveal = None     # показанный ответ — для тех, кто вернулся во время показа
 
 game = GameState()
 # Обработчики Socket.IO в режиме threading выполняются параллельно, а состояние
@@ -149,39 +150,60 @@ def on_join(data):
             old_sid = sid
             break
 
-        prev = game.players.pop(old_sid, None) if old_sid else None
+        prev = game.players.get(old_sid) if old_sid else None
         prev_answer = prev.get('last_answer') if prev else None
-        game.players[request.sid] = {
+        entry = {
             'name': name,
             'score': prev['score'] if prev else 0,
             'last_answer': prev_answer,  # Сохраняем предыдущий ответ при переподключении
             'player_id': player_id or (prev.get('player_id') if prev else ''),
             'online': True,
         }
+        if old_sid:
+            # Вернувшийся игрок остаётся на своём месте в очереди. VIP — первый
+            # вошедший, а pop + вставка уносили его в конец: после переподключения
+            # (уснул телефон, обновилась вкладка) кнопка «Далее» уходила другому.
+            game.players = {(request.sid if sid == old_sid else sid):
+                            (entry if sid == old_sid else p)
+                            for sid, p in game.players.items()}
+        else:
+            game.players[request.sid] = entry
 
     join_room('players')
     # Имя — как его сохранил сервер (обрезано до MAX_PLAYER_NAME_LENGTH): по нему
     # клиент находит себя в таблице и среди победителей.
     emit('join_success', {'game_id': game.game_id, 'name': name}, to=request.sid)
 
-    # Отправляем полное состояние игры переподключившемуся игроку
-    state = _get_client_state()
-    emit('game_status', state, to=request.sid)
+    with state_lock:
+        # Отправляем полное состояние игры переподключившемуся игроку
+        emit('game_status', _get_client_state(), to=request.sid)
 
-    # Если идет вопрос (проигрывается трек или фаза ответов) - отправляем данные вопроса
-    if game.current_phase in ['question', 'answer'] and game.current_q_index >= 0:
-        current_q = game.questions[game.current_q_index]
-        emit('new_question', {
-            'index': game.current_q_index + 1,
-            'total': len(game.questions),
-            'question': current_q.get('question', ''),
-            'type': current_q.get('type', 'text'),
-            'track_meta': current_q.get('track_meta', ''),
-        }, to=request.sid)
+        # Идёт вопрос — данные вопроса; идёт показ ответа — сам ответ: иначе
+        # вернувшийся в этот момент видел экран вопроса и оставался без «Далее».
+        if game.current_phase == 'question' and game.current_q_index >= 0:
+            current_q = game.questions[game.current_q_index]
+            emit('new_question', {
+                'index': game.current_q_index + 1,
+                'total': len(game.questions),
+                'question': current_q.get('question', ''),
+                'type': current_q.get('type', 'text'),
+                'track_meta': current_q.get('track_meta', ''),
+            }, to=request.sid)
+        elif game.current_phase == 'answer' and game.last_reveal:
+            emit('show_answer_client', {
+                **game.last_reveal,
+                'leaderboard': _leaderboard(),
+                'vip_id': pick_vip_sid(game.players),
+                'my_delta': game.last_reveal['deltas'].get(name, 0),
+            }, to=request.sid)
+            if game.next_allowed:
+                # Всем: вернулся VIP — кнопка снова у него, у временного VIP пропадает.
+                socketio.emit('allow_next_question', {'vip_id': pick_vip_sid(game.players)},
+                              to='players')
 
-    # Если идет фаза ответов и у игрока нет ответа - разрешаем отвечать
-    if game.current_phase == 'question' and game.inputs_enabled and not prev_answer:
-        emit('allow_answers', to=request.sid)
+        # Если идет фаза ответов и у игрока нет ответа - разрешаем отвечать
+        if game.current_phase == 'question' and game.inputs_enabled and not prev_answer:
+            emit('allow_answers', to=request.sid)
 
     _broadcast_admin_info()
 
@@ -337,6 +359,7 @@ def _advance_question(from_index=None):
 def _advance_question_locked():
     game.current_q_index += 1
     game.next_allowed = False
+    game.last_reveal = None
     if game.current_q_index >= len(game.questions):
         _end_game()
     else:
@@ -453,6 +476,11 @@ def player_next_question():
         if not game.is_active: return
         _advance_question_locked()
 
+def _leaderboard():
+    return sorted([{'name': p['name'], 'score': p['score']} for p in list(game.players.values())],
+                  key=lambda x: x['score'], reverse=True)
+
+
 def _reveal():
     if game.current_phase != 'question': return
     game.current_phase = 'answer'
@@ -471,21 +499,24 @@ def _reveal():
         p['score'] += pts
         deltas[p['name']] = pts
 
-    lb = sorted([{'name': p['name'], 'score': p['score']} for p in list(game.players.values())], key=lambda x:x['score'], reverse=True)
+    lb = _leaderboard()
 
     # 2. Определение VIP и последнего раунда
     vip_sid = pick_vip_sid(game.players)
     is_last_round = (game.current_q_index >= len(game.questions) - 1)
+    game.last_reveal = {
+        'answer': q['answer'],
+        'track_meta': q.get('track_meta', ''),
+        'deltas': deltas,
+        'is_last': is_last_round,
+    }
 
     # 3. Отправка результатов каждому игроку персонально (с my_delta)
     for sid, p in list(game.players.items()):
         socketio.emit('show_answer_client', {
-            'answer': q['answer'],
-            'track_meta': q.get('track_meta', ''),
-            'deltas': deltas,
+            **game.last_reveal,
             'leaderboard': lb,
             'vip_id': vip_sid,
-            'is_last': is_last_round,
             'my_delta': deltas.get(p['name'], 0)  # Персональный результат игрока
         }, to=sid)
 

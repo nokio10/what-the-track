@@ -594,11 +594,14 @@
             socket.on('allow_next_question', (d) => {
                 // VIP мог смениться после показа ответа: сервер присылает текущего.
                 if (d && d.vip_id) amIVip = (d.vip_id === socket.id);
+                const btn = document.getElementById('vipNextBtn');
                 if (amIVip && !isLastRound) {
-                    const btn = document.getElementById('vipNextBtn');
                     btn.classList.remove('hidden');
                     btn.style.opacity = 0;
                     setTimeout(() => btn.style.opacity = 1, 100);
+                } else {
+                    // Кнопку держал временный VIP, пока первый игрок переподключался.
+                    btn.classList.add('hidden');
                 }
             });
 

@@ -168,3 +168,64 @@ class WebSecurityTests(unittest.TestCase):
         self.client(admin=True).emit('admin_audio_finished')
         player.emit('player_next_question')
         self.assertEqual(self.m.game.current_q_index, 1)
+
+    def _round_with_two_players(self):
+        """Первым вошёл Alice, вторым Bob; раунд дошёл до показа ответа."""
+        self.m.game.game_id = 'TEST'
+        self.m.game.questions = [
+            {'id': 'q1', 'question': 'A ___', 'answer': 'first'},
+            {'id': 'q2', 'question': 'B ___', 'answer': 'second'},
+        ]
+        self.m.game.is_active = True
+        admin = self.client(admin=True)
+        alice, bob = self.client(), self.client()
+        alice.emit('join_game', {'name': 'Alice', 'player_id': 'alice-id'})
+        bob.emit('join_game', {'name': 'Bob', 'player_id': 'bob-id'})
+        admin.emit('admin_next_question', {'from_index': -1})
+        admin.emit('admin_audio_finished')
+        alice.emit('submit_answer', {'answer': 'first'})
+        admin.emit('admin_show_answer')
+        return admin, alice, bob
+
+    def _sid(self, client):
+        return self.m.socketio.server.manager.sid_from_eio_sid(client.eio_sid, '/')
+
+    def _vip_name(self):
+        return self.m.game.players[self.m.pick_vip_sid(self.m.game.players)]['name']
+
+    def test_first_player_keeps_next_button_after_reconnect(self):
+        admin, alice, bob = self._round_with_two_players()
+        self.assertEqual(self._vip_name(), 'Alice')
+        # Уснул телефон: соединение оборвалось, игрок вернулся с новым sid.
+        alice.disconnect()
+        self.assertEqual(self._vip_name(), 'Bob', 'пока Alice нет, листает Bob')
+        alice = self.client()
+        alice.emit('join_game', {'name': 'Alice', 'player_id': 'alice-id'})
+        self.assertEqual(self._vip_name(), 'Alice', 'вернувшийся первый игрок снова VIP')
+        alice.get_received(); bob.get_received()
+        admin.emit('admin_audio_finished')
+        vip_ids = [e['args'][0]['vip_id'] for e in alice.get_received()
+                   if e['name'] == 'allow_next_question']
+        self.assertEqual(vip_ids, [self._sid(alice)])
+        bob.emit('player_next_question')
+        self.assertEqual(self.m.game.current_q_index, 0, 'чужое «Далее» не листает')
+        alice.emit('player_next_question')
+        self.assertEqual(self.m.game.current_q_index, 1)
+
+    def test_player_back_during_answer_sees_answer_and_next_button(self):
+        admin, alice, bob = self._round_with_two_players()
+        admin.emit('admin_audio_finished')          # «Далее» уже разрешено
+        alice.disconnect()
+        alice = self.client()
+        alice.emit('join_game', {'name': 'Alice', 'player_id': 'alice-id'})
+        events = alice.get_received()
+        names = [e['name'] for e in events]
+        self.assertIn('show_answer_client', names)
+        self.assertNotIn('new_question', names, 'не экран вопроса во время показа ответа')
+        shown = next(e['args'][0] for e in events if e['name'] == 'show_answer_client')
+        self.assertEqual((shown['answer'], shown['my_delta']), ('first', 2))
+        allow = [e['args'][0]['vip_id'] for e in events if e['name'] == 'allow_next_question']
+        self.assertEqual(allow, [self._sid(alice)])
+        # Bob, который держал кнопку, пока Alice не было, получает сигнал её убрать.
+        self.assertIn(self._sid(alice), [e['args'][0]['vip_id'] for e in bob.get_received()
+                                         if e['name'] == 'allow_next_question'])
