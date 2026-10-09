@@ -13,6 +13,7 @@ import multiprocessing
 import ctypes
 import time
 import psutil
+from track_order import player_blocks, mix_player_questions
 from collections import Counter
 from types import SimpleNamespace
 from flask import Flask, request, jsonify
@@ -636,7 +637,7 @@ def _generation_child(task_data, events, gigaam_failed_at):
     # Отказ GigaAM помнится между генерациями, хотя каждая — новый процесс.
     _GIGAAM_STATE["failed_at"] = gigaam_failed_at
     try:
-        generation_task(task_data['game_id'], task_data.get('token'), task_data.get('urls', []))
+        generation_task(task_data['game_id'], task_data.get('token'), task_data.get('urls', []), task_data.get('player_count', 0))
     finally:
         events.put(("gigaam_failed_at", _GIGAAM_STATE["failed_at"]))
 
@@ -686,7 +687,8 @@ def task_worker():
                 generation_task(
                     task_data['game_id'],
                     task_data.get('token'),
-                    task_data.get('urls', [])
+                    task_data.get('urls', []),
+                    task_data.get('player_count', 0)
                 )
         except (Exception, SystemExit) as e:
             # SystemExit тоже: иначе он молча завершал бы единственный рабочий поток.
@@ -2358,7 +2360,7 @@ qlogic = SimpleNamespace(
 )
 
 
-def generation_task(game_id, token, urls):
+def generation_task(game_id, token, urls, player_count=0):
     global _gen_start_time
     _gen_start_time = time.time()
 
@@ -2391,6 +2393,8 @@ def generation_task(game_id, token, urls):
     if not os.path.exists(game_temp_folder): os.makedirs(game_temp_folder)
     
     try:
+        owners = player_blocks(urls, player_count)
+        question_groups = [[] for _ in range(player_count)]
         urls, duplicate_refs = dedupe_yandex_track_urls(urls)
         if duplicate_refs:
             log(f"🧹 Убраны дубли ссылок перед скачиванием: {len(duplicate_refs)}")
@@ -2827,6 +2831,9 @@ def generation_task(game_id, token, urls):
                     )
                 )
 
+                if player_count:
+                    track_id = os.path.splitext(os.path.basename(fpath))[0]
+                    question_groups[owners[track_id]].append(new_qs[-1])
                 generation_stats['questions_created'] += 1
                 log(f"✅ [{used_method.upper()}] Ответ: {answer_text}")
                 
@@ -2843,6 +2850,12 @@ def generation_task(game_id, token, urls):
                     ctypes.CDLL("libc.so.6").malloc_trim(0)
                 except Exception:
                     pass  # Windows/macOS не поддерживают
+
+        if player_count:
+            new_qs, adjacent = mix_player_questions(question_groups)
+            log(f'🔀 Вопросы перемешаны по {player_count} игрокам.')
+            if adjacent:
+                log(f'⚠️ После дублей и пропусков осталось неравное число вопросов: соседств одного игрока {adjacent}. Все вопросы сохранены.')
 
         with open(game_json_file, 'w', encoding='utf-8') as f:
             json.dump(new_qs, f, ensure_ascii=False, indent=4)
@@ -3384,11 +3397,17 @@ def start_gen():
         # game_id становится частью путей к папкам: «../x» писал бы вне media.
         return jsonify({"error": "invalid game_id"}), 400
 
+    try:
+        player_blocks(d.get('urls', []), d.get('player_count', 0))
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+
     # Добавляем в очередь вместо создания нового потока
     task_queue.put({
         'game_id': d['game_id'],
         'token': d.get('token'),
-        'urls': d.get('urls', [])
+        'urls': d.get('urls', []),
+        'player_count': d.get('player_count', 0)
     })
 
     return jsonify({"msg": "Queued"})

@@ -265,14 +265,20 @@ def on_gen_start(data):
         return
     try:
         payload = {'game_id': game.game_id, 'token': data.get('token'),
-                   'urls': str(data.get('urls', '')).split('\n')}
+                   'urls': str(data.get('urls', '')).split('\n'),
+                   'player_count': data.get('player_count', 0)}
         resp = requests.post(f"{GENERATOR_URL}/start", json=payload, timeout=2)
         if resp.status_code == 200:
             emit('gen_log', {'msg': '🚀 Задача отправлена...'}, to='admin_room')
             socketio.start_background_task(poll_generator_task)
         else:
-            emit('gen_log', {'msg': f'⚠️ Ошибка генератора: {resp.text}'}, to=request.sid)
-            emit('gen_finished', {'ok': False, 'msg': resp.text}, to=request.sid)
+            # jsonify экранирует кириллицу: показываем само сообщение, а не \u-коды.
+            try:
+                error = resp.json().get('error') or resp.text
+            except (ValueError, AttributeError):
+                error = resp.text
+            emit('gen_log', {'msg': f'⚠️ Ошибка генератора: {error}'}, to=request.sid)
+            emit('gen_finished', {'ok': False, 'msg': error}, to=request.sid)
     except Exception as e:
         emit('gen_log', {'msg': f'❌ Ошибка связи: {e}'}, to=request.sid)
         emit('gen_finished', {'ok': False, 'msg': str(e)}, to=request.sid)

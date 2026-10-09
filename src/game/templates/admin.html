@@ -204,6 +204,9 @@
                         <div class="col-md-6">
                             <label class="form-label text-white-50 small text-uppercase" data-i18n="trackUrls">Track Links / Playlists</label>
                             <textarea id="trackUrls" class="form-control form-control-dark" rows="5" placeholder="https://music.yandex.ru/..."></textarea>
+                            <label for="trackPlayerCount" class="form-label text-white-50 small mt-3" data-i18n="trackPlayerCount">Players in the list (0 = keep order)</label>
+                            <input id="trackPlayerCount" type="number" min="0" step="1" value="0" class="form-control form-control-dark">
+                            <div class="small text-white-50 mt-1" data-i18n="trackPlayerHint">Equal blocks: all tracks from player 1, then player 2, etc. Individual track links only. Questions will alternate between players.</div>
                         </div>
                     </div>
                     <hr class="border-secondary my-4">
@@ -369,6 +372,8 @@
                 yandexToken: "Yandex Token",
                 getToken: "Get Token Here",
                 tokenFromEnv: "Leave empty to use YANDEX_TOKEN from .env",
+                trackPlayerCount: "Players in the list (0 = keep order)",
+                trackPlayerHint: "Equal blocks: all tracks from player 1, then player 2, etc. Individual track links only. Questions will alternate between players.",
                 trackUrls: "Track Links / Playlists",
                 genStatus: "Generation Status:",
                 btnGenerate: "GENERATE",
@@ -401,6 +406,8 @@
                 yandexToken: "Яндекс Токен",
                 getToken: "Получить токен",
                 tokenFromEnv: "Пусто — возьмётся YANDEX_TOKEN из .env",
+                trackPlayerCount: "Игроков в списке (0 = сохранить порядок)",
+                trackPlayerHint: "Равные блоки: сначала все треки игрока 1, затем игрока 2 и т. д. Только ссылки на отдельные треки. Готовые вопросы будут чередоваться между игроками.",
                 trackUrls: "Ссылки на треки / Плейлисты",
                 genStatus: "Статус генерации:",
                 btnGenerate: "СГЕНЕРИРОВАТЬ",
@@ -592,9 +599,14 @@
             const token = document.getElementById('yandexToken').value;
             const urls = document.getElementById('trackUrls').value;
             if(!urls) return alert(currentLang === 'en' ? 'Add links!' : 'Добавьте ссылки!');
+            const playerCount = Number(document.getElementById('trackPlayerCount').value);
+            const linkCount = urls.split(/\r?\n/).filter(line => line.trim()).length;
+            if (!Number.isSafeInteger(playerCount) || playerCount < 0 || (playerCount > 0 && linkCount % playerCount !== 0)) {
+                return alert(currentLang === 'en' ? 'Enter a whole player count. The number of links must divide evenly by it.' : 'Укажите целое число игроков. Количество ссылок должно делиться на него без остатка.');
+            }
             document.getElementById('btnGenStart').disabled = true;
             document.getElementById('consoleOutput').innerHTML = '';
-            socket.emit('gen_start', {token: token, urls: urls});
+            socket.emit('gen_start', {token: token, urls: urls, player_count: playerCount});
         }
 
         window.givePoint = function(playerId) { socket.emit('admin_give_point', {id: playerId}); }
